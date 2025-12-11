@@ -1,78 +1,61 @@
 pipeline {
     agent any
-
-    parameters {
-        booleanParam(name: 'RUN_PROD', defaultValue: false, description: 'Run Flyway on PROD after QA?')
-    }
-
     environment {
-        QA_DB_URL = 'jdbc:postgresql://localhost:5433/qa_db'
-        PROD_DB_URL = 'jdbc:postgresql://localhost:5434/prod_db'
+        // Update these paths according to your server
+        FLYWAY_HOME = 'C:\\Program Files\\Red Gate\\Flyway Desktop\\flyway'
+        SQL_PATH = 'C:\\Program Files\\Red Gate\\Flyway Desktop\\flyway\\sql' // will be overwritten after git checkout
+        QA_DB_URL = 'jdbc:mysql://127.0.0.1:3306/qa_db?allowPublicKeyRetrieval=true&useSSL=false'
+        PROD_DB_URL = 'jdbc:mysql://127.0.0.1:3306/prod_db?allowPublicKeyRetrieval=true&useSSL=false'
+        DB_USER = 'root'
+        DB_PASSWORD = 'Akash@1234'
     }
-
     stages {
-
-        stage('Checkout Repo') {
+        stage('Checkout SQL scripts') {
             steps {
-                checkout scm
+                // Clone your Git repo with SQL scripts
+                git branch: 'main', url: 'https://github.com/akashsubhransh12/flyway-migration-demo.git'
+
+                // Update SQL_PATH to point to the cloned repo folder
+                script {
+                    SQL_PATH = "${env.WORKSPACE}\\sql"
+                }
+
+                bat "dir ${SQL_PATH}"
             }
         }
 
-        stage('Flyway Validate') {
+        stage('Migrate QA') {
             steps {
-                echo "Validating migrations..."
-                sh '''
-                docker run --rm \
-                    -v $PWD/sql:/flyway/sql \
-                    flyway/flyway:latest \
-                    -url=${QA_DB_URL} \
-                    -user=admin \
-                    -password=admin \
-                    validate
-                '''
-            }
-        }
+                echo 'Running Flyway migration on QA database...'
+                bat "\"${FLYWAY_HOME}\\flyway.exe\" -url=\"${QA_DB_URL}\" -user=${DB_USER} -password=${DB_PASSWORD} -locations=filesystem:${SQL_PATH} migrate"
 
-        stage('Run Migration on QA DB') {
-            steps {
-                echo "Running migration on QA database..."
-                sh '''
-                docker run --rm \
-                    -v $PWD/sql:/flyway/sql \
-                    flyway/flyway:latest \
-                    -url=${QA_DB_URL} \
-                    -user=admin \
-                    -password=admin \
-                    migrate
-                '''
+                echo 'QA Migration Info:'
+                bat "\"${FLYWAY_HOME}\\flyway.exe\" -url=\"${QA_DB_URL}\" -user=${DB_USER} -password=${DB_PASSWORD} -locations=filesystem:${SQL_PATH} info"
             }
         }
 
         stage('Approval for PROD') {
-            when {
-                expression { return params.RUN_PROD }
-            }
             steps {
-                input message: "QA Successful. Approve migration to PROD?"
+                input message: 'Approve PROD migration?', ok: 'Deploy to PROD'
             }
         }
 
-        stage('Run Migration on PROD DB') {
-            when {
-                expression { return params.RUN_PROD }
-            }
+        stage('Migrate PROD') {
             steps {
-                echo "Running migration on PROD database..."
-                sh '''
-                docker run --rm \
-                    -v $PWD/sql:/flyway/sql \
-                    flyway/flyway:latest \
-                    -url=${PROD_DB_URL} \
-                    -user=admin \
-                    -password=admin \
-                    migrate
-                '''
+                echo 'Running Flyway migration on PROD database...'
+                bat "\"${FLYWAY_HOME}\\flyway.exe\" -url=\"${PROD_DB_URL}\" -user=${DB_USER} -password=${DB_PASSWORD} -locations=filesystem:${SQL_PATH} migrate"
+
+                echo 'PROD Migration Info:'
+                bat "\"${FLYWAY_HOME}\\flyway.exe\" -url=\"${PROD_DB_URL}\" -user=${DB_USER} -password=${DB_PASSWORD} -locations=filesystem:${SQL_PATH} info"
             }
+        }
+    }
+    post {
+        success {
+            echo 'Pipeline completed successfully!'
+        }
+        failure {
+            echo 'Pipeline failed! Check logs for details.'
         }
     }
 }
