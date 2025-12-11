@@ -64,15 +64,14 @@ pipeline {
             steps {
                 echo "Running migration on PROD database..."
                 sh '''
-docker run --rm \
-    -v ${WORKSPACE}/sql:/flyway/sql \
-    flyway/flyway:latest \
-    -url=${QA_DB_URL} \
-    -user=admin \
-    -password=admin \
-    validate
-'''
-
+                docker run --rm \
+                    -v $PWD/sql:/flyway/sql \
+                    flyway/flyway:latest \
+                    -url=${PROD_DB_URL} \
+                    -user=admin \
+                    -password=admin \
+                    migrate
+                '''
             }
         }
     }
